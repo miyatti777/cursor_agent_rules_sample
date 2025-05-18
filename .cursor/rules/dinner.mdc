@@ -1,0 +1,406 @@
+---
+description: 夕食の準備のために、エージェントがユーザーに返事をしたり、アクションをしたり、アシストをしたりするルールです
+globs: 
+alwaysApply: false
+---
+```yaml
+
+# 1. 夕食の準備 - 計画立案フェーズ
+trigger: "夕食の準備"
+steps: 
+    - name: "start_info_collection"
+      action: "call"
+      target: "dinner_questions"
+      message: "夕食の準備をするにあたって、質問させてください"
+    
+    - name: "confirm_dinner_start"
+      action: "confirm"
+      message: "以下の内容で夕食準備プロジェクトを開始します：{{info_collection}}"
+    
+    - name: "get_current_date"
+      action: "execute_shell"
+      command: "date +%Y-%m-%d"
+      variable: "current_date"
+      message: "現在の日付を取得しています..."
+    
+    - name: "create_dinner_dir"
+      action: "execute_shell"
+      command: "mkdir -p Dinner/{{current_date}}_{{dinner_menu}}"
+      variable: "dinner_dir"
+      message: "夕食準備用ディレクトリを作成しています..."
+
+    - name: "save_dinner_dir"
+      action: "execute_shell"
+      command: "echo {{dinner_dir}} > .dinner_project_path"
+      message: "プロジェクトパスを保存しています..."
+    
+    - name: "create_dinner_plan"
+      action: "create_file"
+      path: "{{dinner_dir}}/plan.md"
+      template: "dinner_plan_template"
+      message: "夕食準備計画ファイルを作成しました"
+    
+    - name: "create_recipe"
+      action: "create_file"
+      path: "{{dinner_dir}}/recipe.md"
+      template: "recipe_template"
+      message: "レシピファイルを作成しました"
+    
+    - name: "create_tasks"
+      action: "create_file"
+      path: "{{dinner_dir}}/tasks.md"
+      template: "tasks_template"
+      message: "タスクリストを作成しました"
+    
+    - name: "create_shopping_list"
+      action: "create_file"
+      path: "{{dinner_dir}}/shopping_list.md"
+      template: "shopping_list_template"
+      message: "買い物リストを作成しました"
+    
+    - name: "plan_created"
+      action: "confirm"
+      message: "初期プランを作成しました。計画の詳細をご確認いただけますか？"
+      variable: "review_plan"
+    
+    - name: "dinner_plan_next_steps"
+      action: "notify"
+      message: "これから夕食の準備を進めるには以下のステップがあります：\n\n1. 「夕食の計画改善」と言って計画を改善する\n2. 「夕食の買い物」と言って買い物フェーズに進む\n\n準備ができたら次に進んでください。"
+
+# 1.5 夕食の計画改善 - 計画改善フェーズ
+---
+trigger: "夕食の計画改善"
+steps:
+    - name: "load_project_path"
+      action: "execute_shell"
+      command: "cat .dinner_project_path"
+      variable: "dinner_dir"
+      message: "プロジェクトパスを読み込んでいます..."
+    
+    - name: "load_dinner_menu"
+      action: "execute_shell"
+      command: "grep 'メニュー:' {{dinner_dir}}/recipe.md | head -1 | cut -d':' -f2 | tr -d ' '"
+      variable: "dinner_menu"
+      message: "メニュー情報を読み込んでいます..."
+    
+    - name: "confirm_plan_improvement"
+      action: "confirm"
+      message: "「{{dinner_menu}}」の計画を改善します。どのような点を改善したいですか？"
+      variable: "improvement_needed"
+    
+    - name: "start_feedback_collection"
+      action: "confirm"
+      message: "フィードバック収集を開始します。各質問に具体的に回答してください。準備はよろしいですか？"
+      variable: "start_feedback"
+    
+    - name: "collect_plan_feedback"
+      action: "call"
+      target: "plan_feedback_questions"
+      params:
+        dinner_menu: "{{dinner_menu}}"
+        dinner_dir: "{{dinner_dir}}"
+      variable: "plan_feedback"
+      message: "プランについてのフィードバックを収集します..."
+      condition: "{{start_feedback}} == true"
+    
+    - name: "create_feedback_summary"
+      action: "create_file"
+      path: "{{dinner_dir}}/feedback.md"
+      template: "feedback_summary_template"
+      message: "フィードバック概要ファイルを作成しました"
+      condition: "{{start_feedback}} == true"
+    
+    - name: "update_plan_based_on_feedback"
+      action: "confirm"
+      message: "フィードバックを元にプランを更新しますか？\n\n収集したフィードバック：\n{{plan_feedback}}"
+      variable: "update_plan"
+      condition: "{{start_feedback}} == true"
+    
+    - name: "update_recipe"
+      action: "modify_file"
+      path: "{{dinner_dir}}/recipe.md"
+      variable: "updated_recipe"
+      message: "レシピを更新しています..."
+      condition: "{{update_plan}} == true"
+    
+    - name: "update_tasks"
+      action: "modify_file"
+      path: "{{dinner_dir}}/tasks.md"
+      variable: "updated_tasks"
+      message: "タスクリストを更新しています..."
+      condition: "{{update_plan}} == true"
+    
+    - name: "update_shopping_list"
+      action: "modify_file"
+      path: "{{dinner_dir}}/shopping_list.md"
+      variable: "updated_shopping_list"
+      message: "買い物リストを更新しています..."
+      condition: "{{update_plan}} == true"
+    
+    - name: "plan_update_complete"
+      action: "notify"
+      message: "プランの更新が完了しました。"
+      condition: "{{update_plan}} == true"
+
+
+# dinner questionsの定義
+dinner_questions:
+  - question: "今日の夕食のメニュー名を教えてください（例：カレーライス、パスタ、焼き魚定食など）"
+    key: "dinner_menu"
+    required: true
+  
+  - question: "食事人数は何名ですか？"
+    key: "people_count"
+    required: true
+  
+  - question: "内訳を教えてください（大人何名、子供何名）"
+    key: "people_details"
+    required: true
+  
+  - question: "調理予定時刻はいつ頃ですか？（例：18:00）"
+    key: "cooking_time"
+    required: false
+    default: "18:30"
+  
+  - question: "食事予定時刻はいつ頃ですか？（例：19:00）"
+    key: "dinner_time"
+    required: false
+    default: "19:30"
+  
+  - question: "予算はいくらくらいですか？（例：2000円）"
+    key: "budget"
+    required: false
+    default: "2000円"
+  
+  - question: "食事で避けたい材料はありますか？（アレルギーなど）"
+    key: "allergies"
+    required: false
+    default: "なし"
+  
+  - question: "その他の要望はありますか？"
+    key: "special_requests"
+    required: false
+    default: "なし"
+
+# テンプレート定義
+templates:
+  dinner_plan_template: |
+    # 夕食準備計画
+    
+    ## 基本情報
+    - 日付: {{current_date}}
+    - メニュー: {{dinner_menu}}
+    - 人数: {{people_count}}人（{{people_details}}）
+    
+    ## スケジュール
+    - 買い物: {{shopping_time}}頃
+    - 調理開始: {{cooking_time}}頃
+    - 提供時間: {{dinner_time}}
+    
+    ## 備考
+    {{special_requests}}
+  
+  recipe_template: |
+    # レシピ
+    
+    ## メニュー: {{dinner_menu}}
+    
+    ### 材料（{{people_count}}人分）
+    {{recipe_ingredients}}
+    
+    ### 調理手順
+    {{recipe_steps}}
+    
+    ### 付け合わせ
+    {{recipe_sides}}
+  
+  tasks_template: |
+    # タスクリスト
+    
+    ## 買い物
+    - [ ] 買い物リストの作成
+    - [ ] スーパーで食材の購入
+    
+    ## 準備
+    - [ ] 食材の下準備（肉・野菜の洗浄、カット）
+    - [ ] 調理器具の準備（鍋、包丁、まな板、お玉など）
+    
+    ## 調理
+    - [ ] {{task_item_1}}
+    - [ ] {{task_item_2}}
+    - [ ] {{task_item_3}}
+    - [ ] ご飯の炊飯
+    - [ ] 盛り付け
+    
+    ## サービング
+    - [ ] テーブルセッティング
+    - [ ] 飲み物の準備
+    - [ ] 取り分け
+    
+    ## 片付け
+    - [ ] 食器洗い
+    - [ ] キッチン清掃
+    - [ ] 残ったカレーの保存
+  
+  shopping_list_template: |
+    # 買い物リスト
+    
+    ## 予算
+    - 買い物予算: {{budget}}
+    
+    ## 必要な食材
+    {{shopping_items}}
+    
+    ## メモ
+    {{shopping_notes}}
+
+# feedback用に質問定義を追加
+plan_feedback_questions:
+  - category: "メニューについて"
+    items:
+      - question: "メニュー「{{dinner_menu}}」に追加したい料理はありますか？"
+        key: "additional_dishes"
+        required: false
+      - question: "メインディッシュのアレンジ方法はありますか？（例：辛さ調整、具材の変更など）"
+        key: "main_dish_customization"
+        required: false
+      - question: "副菜として追加したいものはありますか？"
+        key: "side_dishes"
+        required: false
+      - question: "デザートは必要ですか？必要な場合は希望を教えてください"
+        key: "dessert"
+        default: "不要"
+        required: false
+      - question: "飲み物の希望はありますか？"
+        key: "beverages"
+        default: "お茶"
+        required: false
+  
+  - category: "材料について"
+    items:
+      - question: "追加したい材料はありますか？"
+        key: "additional_ingredients"
+        required: false
+      - question: "除外したい材料はありますか？"
+        key: "excluded_ingredients"
+        required: false
+      - question: "有機食材や特定ブランドの使用希望はありますか？"
+        key: "ingredient_preferences"
+        required: false
+      - question: "食材の量を調整したいものはありますか？（例：肉を多めにするなど）"
+        key: "quantity_adjustments"
+        required: false
+      - question: "特定の調味料にこだわりはありますか？"
+        key: "seasoning_preferences"
+        required: false
+  
+  - category: "調理方法について"
+    items:
+      - question: "希望する調理法はありますか？（例：オーブン調理、炒め物、煮込み料理など）"
+        key: "preferred_cooking_method"
+        required: false
+      - question: "調理時間の制約はありますか？"
+        key: "cooking_time_constraints"
+        required: false
+      - question: "使用したくない調理器具はありますか？"
+        key: "avoided_cooking_tools"
+        required: false
+      - question: "一度に調理できる量に制限はありますか？"
+        key: "cooking_volume_limit"
+        required: false
+      - question: "調理の難易度に希望はありますか？（簡単、普通、本格的）"
+        key: "cooking_difficulty"
+        default: "普通"
+        required: false
+  
+  - category: "スケジュールについて"
+    items:
+      - question: "買い物の時間帯を変更したいですか？"
+        key: "shopping_time_change"
+        required: false
+      - question: "調理開始時間を変更したいですか？"
+        key: "cooking_start_time_change"
+        required: false
+      - question: "食事の時間帯を変更したいですか？"
+        key: "eating_time_change"
+        required: false
+      - question: "前日に準備できることはありますか？"
+        key: "prep_in_advance"
+        required: false
+      - question: "時間がかかる工程はどのタイミングで行いたいですか？"
+        key: "time_consuming_steps_timing"
+        required: false
+  
+  - category: "その他の要望"
+    items:
+      - question: "栄養バランスについての要望はありますか？"
+        key: "nutrition_requirements"
+        required: false
+      - question: "見た目や盛り付けについての要望はありますか？"
+        key: "presentation_requirements"
+        required: false
+      - question: "特別なイベントや目的がありますか？（例：誕生日、記念日など）"
+        key: "special_occasion"
+        required: false
+      - question: "子ども向けアレンジの必要はありますか？"
+        key: "kid_friendly_adjustment"
+        required: false
+      - question: "残り物の活用予定はありますか？"
+        key: "leftovers_plan"
+        required: false
+      - question: "その他、プラン全体について変更したい点はありますか？"
+        key: "other_plan_changes"
+        required: false
+
+display_files:
+  - action: "for_each"
+    items: "{{files}}"
+    variable: "current_file"
+    do:
+      - action: "read_file"
+        path: "{{current_file}}"
+        variable: "file_content"
+      - action: "notify"
+        message: "## ファイル: {{current_file}}\n\n{{file_content}}"
+
+feedback_summary_template: |
+  # フィードバック概要
+  
+  ## メニューについて
+  - 追加メニュー: {{additional_dishes}}
+  - メインディッシュのアレンジ: {{main_dish_customization}}
+  - 副菜: {{side_dishes}}
+  - デザート: {{dessert}}
+  - 飲み物: {{beverages}}
+  
+  ## 材料について
+  - 追加材料: {{additional_ingredients}}
+  - 除外材料: {{excluded_ingredients}}
+  - 材料の好み: {{ingredient_preferences}}
+  - 量の調整: {{quantity_adjustments}}
+  - 調味料の好み: {{seasoning_preferences}}
+  
+  ## 調理方法について
+  - 希望する調理法: {{preferred_cooking_method}}
+  - 調理時間の制約: {{cooking_time_constraints}}
+  - 避けたい調理器具: {{avoided_cooking_tools}}
+  - 調理量の制限: {{cooking_volume_limit}}
+  - 希望する難易度: {{cooking_difficulty}}
+  
+  ## スケジュールについて
+  - 買い物時間の変更: {{shopping_time_change}}
+  - 調理開始時間の変更: {{cooking_start_time_change}}
+  - 食事時間の変更: {{eating_time_change}}
+  - 前日準備: {{prep_in_advance}}
+  - 時間のかかる工程: {{time_consuming_steps_timing}}
+  
+  ## その他の要望
+  - 栄養バランス: {{nutrition_requirements}}
+  - 見た目・盛り付け: {{presentation_requirements}}
+  - 特別な機会: {{special_occasion}}
+  - 子ども向けアレンジ: {{kid_friendly_adjustment}}
+  - 残り物の活用: {{leftovers_plan}}
+  - その他の変更点: {{other_plan_changes}}
+
+
+```

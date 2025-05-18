@@ -1,0 +1,486 @@
+---
+description: 夕食の準備の実行フェーズに関するルール（買い物・調理・片付け・振り返り）
+globs: 
+alwaysApply: false
+---
+# 夕食実行ルール - 買い物・調理・片付け・振り返りフェーズ
+description: "夕食の準備の実行フェーズに関するルール（買い物・調理・片付け・振り返り）"
+
+# 1. 夕食の買い物 - 買い物管理フェーズ
+---
+trigger: "夕食の買い物"
+steps:
+    - name: "load_project_path"
+      action: "execute_shell"
+      command: "cat .dinner_project_path"
+      variable: "dinner_dir"
+      message: "プロジェクトパスを読み込んでいます..."
+    
+    - name: "load_variables"
+      action: "execute_shell"
+      command: "grep shopping_budget {{dinner_dir}}/shopping_list.md | cut -d':' -f2 | tr -d ' 円'"
+      variable: "shopping_budget"
+      message: "予算情報を読み込んでいます..."
+    
+    - name: "manage_shopping"
+      action: "call shopping_manager"
+      params:
+        shopping_list_path: "{{dinner_dir}}/shopping_list.md"
+        budget: "{{shopping_budget}}"
+      message: "買い物リストの管理を開始します。予算内で必要な食材を揃えましょう。"
+    
+    - name: "record_shopping_time"
+      action: "execute_shell"
+      command: "date +%H:%M"
+      variable: "shopping_end_time"
+      message: "買い物完了時刻: {{shopping_end_time}}"
+    
+    - name: "update_shopping_status"
+      action: "append_to_file"
+      path: "{{dinner_dir}}/shopping_list.md"
+      template: "shopping_status_template"
+      message: "買い物ステータスを記録しました"
+    
+    - name: "shopping_complete"
+      action: "confirm"
+      message: "買い物が完了しました。次は「夕食の調理」と話しかけて調理フェーズに進んでください。"
+
+# 2. 夕食の調理 - 調理プロセスフェーズ
+---
+trigger: "夕食の調理"
+steps:
+    - name: "load_project_path"
+      action: "execute_shell"
+      command: "cat .dinner_project_path"
+      variable: "dinner_dir"
+      message: "プロジェクトパスを読み込んでいます..."
+    
+    - name: "load_cooking_method"
+      action: "read_file"
+      path: "{{dinner_dir}}/recipe.md"
+      variable: "recipe_content"
+      message: "レシピ情報を読み込んでいます..."
+    
+    - name: "ingredient_preparation"
+      action: "call"
+      target: "cooking_preparation"
+      params:
+        recipe_path: "{{dinner_dir}}/recipe.md"
+        tasks_path: "{{dinner_dir}}/tasks.md"
+      message: "材料の下準備を開始します。"
+    
+    - name: "setup_cooking_timer"
+      action: "execute_shell"
+      command: "date +%s"
+      variable: "cooking_start_timestamp"
+      message: "調理開始時間を記録しています..."
+    
+    - name: "record_cooking_start"
+      action: "execute_shell"
+      command: "date +%H:%M"
+      variable: "cooking_start_time"
+      message: "調理開始時刻: {{cooking_start_time}}"
+    
+    - name: "cooking_process"
+      action: "call"
+      target: "cooking_step_manager"
+      params:
+        recipe_path: "{{dinner_dir}}/recipe.md"
+        cooking_methods: "{{cooking_methods}}"
+      message: "調理工程を開始します。手順に従って調理を進めていきます。"
+    
+    - name: "create_cooking_status"
+      action: "create_file"
+      path: "{{dinner_dir}}/cooking_status.md"
+      template: "cooking_status_template"
+      message: "調理状況ファイルを作成しました"
+    
+    - name: "confirm_cooking_complete"
+      action: "confirm"
+      message: "調理が完了しましたか？"
+      variable: "cooking_completed"
+    
+    - name: "record_cooking_end_time"
+      action: "execute_shell"
+      command: "date +%s"
+      variable: "cooking_end_timestamp"
+      message: "調理完了時間を記録しています..."
+      condition: "{{cooking_completed}} == true"
+    
+    - name: "calculate_cooking_time"
+      action: "execute_shell"
+      command: "echo $(( {{cooking_end_timestamp}} - {{cooking_start_timestamp}} ))"
+      variable: "total_cooking_seconds"
+      message: "調理時間を計算しています..."
+      condition: "{{cooking_completed}} == true"
+    
+    - name: "convert_cooking_time"
+      action: "execute_shell"
+      command: "echo $(( {{total_cooking_seconds}} / 60 )) 分 $(( {{total_cooking_seconds}} % 60 )) 秒"
+      variable: "total_cooking_time"
+      message: "総調理時間: {{total_cooking_time}}"
+      condition: "{{cooking_completed}} == true"
+    
+    - name: "save_cooking_time"
+      action: "execute_shell"
+      command: "echo {{total_cooking_time}} > {{dinner_dir}}/.cooking_time"
+      message: "調理時間を保存しています..."
+      condition: "{{cooking_completed}} == true"
+    
+    - name: "dinner_serving"
+      action: "call"
+      target: "serving_manager"
+      params:
+        menu: "{{dinner_menu}}"
+        people_count: "{{people_count}}"
+      message: "食卓の準備を開始します。"
+      condition: "{{cooking_completed}} == true"
+    
+    - name: "cooking_complete"
+      action: "confirm"
+      message: "調理と配膳が完了しました。お食事をお楽しみください。食事後は「夕食の片付け」と話しかけて片付けフェーズに進んでください。"
+      condition: "{{cooking_completed}} == true"
+
+# 3. 夕食の片付け - 片付けフェーズ
+---
+trigger: "夕食の片付け"
+steps:
+    - name: "load_project_path"
+      action: "execute_shell"
+      command: "cat .dinner_project_path"
+      variable: "dinner_dir"
+      message: "プロジェクトパスを読み込んでいます..."
+    
+    - name: "create_cleanup_checklist"
+      action: "create_file"
+      path: "{{dinner_dir}}/cleanup.md"
+      template: "cleanup_template"
+      message: "片付けチェックリストを作成しました"
+    
+    - name: "start_cleanup"
+      action: "confirm"
+      message: "片付けを開始しますか？"
+      variable: "cleanup_started"
+    
+    - name: "record_cleanup_start"
+      action: "execute_shell"
+      command: "date +%H:%M"
+      variable: "cleanup_start_time"
+      message: "片付け開始時刻: {{cleanup_start_time}}"
+      condition: "{{cleanup_started}} == true"
+    
+    - name: "guide_cleanup"
+      action: "for_each"
+      items: ["調理器具の洗浄", "調理台の清掃", "シンクの清掃", "ゴミの処理", "食器の回収", "食器の洗浄", "テーブルの清掃", "残り物の保存", "冷蔵庫への収納"]
+      variable: "current_task"
+      do:
+        - action: "confirm"
+          message: "タスク: {{current_task}}\n\nこのタスクは完了しましたか？"
+          variable: "task_completed"
+      condition: "{{cleanup_started}} == true"
+    
+    - name: "record_cleanup_end"
+      action: "execute_shell"
+      command: "date +%H:%M"
+      variable: "cleanup_end_time"
+      message: "片付け完了時刻: {{cleanup_end_time}}"
+      condition: "{{cleanup_started}} == true"
+    
+    - name: "update_cleanup_status"
+      action: "append_to_file"
+      path: "{{dinner_dir}}/cleanup.md"
+      template: "cleanup_status_template"
+      message: "片付けステータスを記録しました"
+      condition: "{{cleanup_started}} == true"
+    
+    - name: "cleanup_complete"
+      action: "confirm"
+      message: "片付けが完了しました。次は「夕食の振り返り」と話しかけて振り返りフェーズに進んでください。"
+      condition: "{{cleanup_started}} == true"
+
+# 4. 夕食の振り返り - 振り返りと総括フェーズ
+---
+trigger: "夕食の振り返り"
+steps:
+    - name: "load_project_path"
+      action: "execute_shell"
+      command: "cat .dinner_project_path"
+      variable: "dinner_dir"
+      message: "プロジェクトパスを読み込んでいます..."
+    
+    - name: "load_cooking_time"
+      action: "execute_shell"
+      command: "cat {{dinner_dir}}/.cooking_time"
+      variable: "total_cooking_time"
+      message: "調理時間情報を読み込んでいます..."
+    
+    - name: "load_menu"
+      action: "execute_shell"
+      command: "grep 'メニュー:' {{dinner_dir}}/recipe.md | cut -d':' -f2 | tr -d ' '"
+      variable: "dinner_menu"
+      message: "メニュー情報を読み込んでいます..."
+    
+    - name: "load_date"
+      action: "execute_shell"
+      command: "date +%Y-%m-%d"
+      variable: "dinner_date"
+      message: "日付情報を取得しています..."
+    
+    - name: "dinner_feedback"
+      action: "call"
+      target: "dinner_review"
+      params:
+        menu: "{{dinner_menu}}"
+        cooking_time: "{{total_cooking_time}}"
+      message: "夕食の振り返りを行います。"
+    
+    - name: "create_review_file"
+      action: "create_file"
+      path: "{{dinner_dir}}/review.md"
+      template: "review_template"
+      message: "振り返りファイルを作成しました"
+    
+    - name: "dinner_project_complete"
+      action: "confirm"
+      message: "夕食準備プロジェクトを完了としますか？"
+      variable: "project_completed"
+    
+    - name: "create_project_summary"
+      action: "create_file"
+      path: "{{dinner_dir}}/summary.md"
+      template: "summary_template"
+      message: "プロジェクト概要ファイルを作成しました"
+      condition: "{{project_completed}} == true"
+    
+    - name: "cleanup_temp_files"
+      action: "execute_shell"
+      command: "rm -f .dinner_project_path {{dinner_dir}}/.cooking_time"
+      message: "一時ファイルを削除しています..."
+      condition: "{{project_completed}} == true"
+    
+    - name: "project_completion_message"
+      action: "confirm"
+      message: "夕食準備プロジェクトが完了しました。お疲れ様でした！次回の夕食準備は「夕食の準備」と話しかけて新しいプロジェクトを開始してください。"
+      condition: "{{project_completed}} == true"
+
+# ユーティリティ関数
+cooking_preparation:
+    - action: "confirm"
+      message: "すべての材料は揃っていますか？"
+      variable: "ingredients_ready"
+    
+    - action: "if"
+      condition: "{{ingredients_ready}} == false"
+      then:
+        - action: "call"
+          target: "missing_ingredients_check"
+        - action: "return"
+          message: "材料が揃っていません。買い物リストを確認してください。"
+    
+    - action: "confirm"
+      message: "材料の下準備を開始します。準備はできていますか？"
+      variable: "prep_ready"
+    
+    - action: "execute_shell"
+      command: "date +%H:%M"
+      variable: "prep_start_time"
+      message: "下準備開始時刻: {{prep_start_time}}"
+    
+    - action: "return"
+      message: "材料の下準備が完了しました。調理を開始できます。"
+
+cooking_step_manager:
+    - action: "read_file"
+      path: "{{recipe_path}}"
+      variable: "recipe_content"
+    
+    - action: "process_steps"
+      input: "{{recipe_content}}"
+      output: "recipe_steps"
+    
+    - action: "for_each"
+      items: "{{recipe_steps}}"
+      variable: "current_step"
+      do:
+        - action: "confirm"
+          message: "次のステップ: {{current_step}}\n\nこのステップは完了しましたか？"
+          variable: "step_completed"
+        
+        - action: "if"
+          condition: "{{step_completed}} == false"
+          then:
+            - action: "timer"
+              duration: "300" # 5分タイマー
+              message: "タイマーをセットしました。5分後に再確認します。"
+            - action: "repeat_step"
+    
+    - action: "return"
+      message: "すべての調理ステップが完了しました。"
+
+serving_manager:
+    - action: "confirm"
+      message: "{{people_count}}人分の食事を用意します。食卓の準備はできていますか？"
+      variable: "table_ready"
+    
+    - action: "if"
+      condition: "{{table_ready}} == false"
+      then:
+        - action: "create_file"
+          path: "{{dinner_dir}}/table_setup.md"
+          template: "table_setup_template"
+        - action: "return"
+          message: "食卓の準備手順を作成しました。準備が整ったら再度試してください。"
+    
+    - action: "execute_shell"
+      command: "date +%H:%M"
+      variable: "serving_time"
+      message: "配膳時刻: {{serving_time}}"
+    
+    - action: "return"
+      message: "食事の準備が整いました。いただきます！"
+
+dinner_review:
+    - action: "collect_feedback"
+      prompt: "味の評価を1〜5で入力してください"
+      variable: "taste_rating"
+    
+    - action: "collect_feedback"
+      prompt: "見た目の評価を1〜5で入力してください"
+      variable: "appearance_rating"
+    
+    - action: "collect_feedback"
+      prompt: "難易度を1〜5で入力してください（1: とても簡単、5: とても難しい）"
+      variable: "difficulty_rating"
+    
+    - action: "collect_feedback"
+      prompt: "全体的な感想を入力してください"
+      variable: "dinner_feedback"
+    
+    - action: "collect_feedback"
+      prompt: "次回への改善点があれば入力してください"
+      variable: "improvement_notes"
+    
+    - action: "calculate_average"
+      values: "[{{taste_rating}}, {{appearance_rating}}]"
+      variable: "overall_rating"
+    
+    - action: "return"
+      message: "振り返りが完了しました。総合評価: {{overall_rating}}/5"
+
+missing_ingredients_check:
+    - action: "read_file"
+      path: "{{dinner_dir}}/shopping_list.md"
+      variable: "shopping_list"
+    
+    - action: "collect_feedback"
+      prompt: "足りない材料をカンマ区切りで入力してください"
+      variable: "missing_items"
+    
+    - action: "append_to_file"
+      path: "{{dinner_dir}}/shopping_list.md"
+      template: "missing_items_template"
+    
+    - action: "return"
+      message: "買い物リストを更新しました。"
+
+# テンプレート定義
+templates:
+  cooking_status_template: |
+    # 調理状況
+    
+    ## 進捗状況
+    - 開始時刻: {{cooking_start_time}}
+    - 予定完了時刻: {{dinner_time}}
+    
+    ## 調理ステップ
+    {{cooking_progress}}
+    
+    ## メモ
+    {{cooking_notes}}
+  
+  cleanup_template: |
+    # 片付けチェックリスト
+    
+    ## キッチン
+    - [ ] 調理器具の洗浄
+    - [ ] 調理台の清掃
+    - [ ] シンクの清掃
+    - [ ] ゴミの処理
+    
+    ## 食卓
+    - [ ] 食器の回収
+    - [ ] 食器の洗浄
+    - [ ] テーブルの清掃
+    
+    ## 残り物処理
+    - [ ] 残り物の保存
+    - [ ] 冷蔵庫への収納
+  
+  cleanup_status_template: |
+    
+    ## 片付けステータス
+    - 開始時刻: {{cleanup_start_time}}
+    - 完了時刻: {{cleanup_end_time}}
+  
+  review_template: |
+    # 夕食振り返り
+    
+    ## 基本情報
+    - 日付: {{dinner_date}}
+    - メニュー: {{dinner_menu}}
+    - 調理時間: {{total_cooking_time}}
+    
+    ## 評価
+    - 味の評価: {{taste_rating}}/5
+    - 見た目の評価: {{appearance_rating}}/5
+    - 難易度: {{difficulty_rating}}/5
+    
+    ## コメント
+    {{dinner_feedback}}
+    
+    ## 次回への改善点
+    {{improvement_notes}}
+  
+  summary_template: |
+    # プロジェクト概要
+    
+    ## メニュー: {{dinner_menu}}
+    
+    ## 時間記録
+    - 計画開始: {{project_start_time}}
+    - 買い物時間: {{shopping_duration}}
+    - 調理時間: {{total_cooking_time}}
+    - 総所要時間: {{total_project_time}}
+    
+    ## 予算
+    - 予算: {{shopping_budget}}円
+    - 実績: {{actual_cost}}円
+    
+    ## 総合評価
+    - 総合満足度: {{overall_rating}}/5
+    
+    ## 学び
+    {{lessons_learned}}
+  
+  table_setup_template: |
+    # 食卓準備
+    
+    ## 必要なもの
+    - 食器: {{people_count}}セット
+    - 箸/カトラリー: {{people_count}}セット
+    - グラス: {{people_count}}個
+    - テーブルクロス: 1枚
+    
+    ## 配置図
+    {{table_layout}}
+  
+  missing_items_template: |
+    
+    ## 追加で必要な材料
+    {{missing_items}}
+  
+  shopping_status_template: |
+    
+    ## 買い物ステータス
+    - 完了時刻: {{shopping_end_time}}
+    - 実績: {{actual_cost}}円

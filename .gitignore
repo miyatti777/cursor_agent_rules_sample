@@ -1,0 +1,22 @@
+# SpecStory explanation file
+.specstory/.what-is-this.md
+
+# Cursor-specific files
+.cursor/cursorsettings
+.specstory
+
+# Mac OS files
+.DS_Store
+
+# Node.js modules (if any)
+node_modules/
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Temporary files
+*.tmp
+*.log
